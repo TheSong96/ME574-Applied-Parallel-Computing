@@ -197,7 +197,7 @@ def parallel_mandelbrot(cx, cy, dist, itrs):
     d_y = cuda.to_device(cy)
     d_f = cuda.device_array((nx, ny), dtype=np.float32)
 
-    TPBX = TPBY = 2**4
+    TPBX = TPBY = 2*6
     gridDims = ((nx + TPBX - 1) // TPBX, (ny + TPBY - 1) // TPBY)
     blockDims = (TPBX, TPBY)
     mandelbrot_kernel[gridDims, blockDims](d_f, d_x, d_y, dist, itrs)
@@ -294,7 +294,7 @@ if __name__ == "__main__":
 
     #Problem 4
     if Prob4:
-        width = height = 2**16
+        width = height = 2**10
         real_low = imag_low = -2
         imag_high = real_high = 2
         real_vals = np.linspace(real_low, real_high, width)
@@ -345,7 +345,7 @@ if __name__ == "__main__":
     is generated if you request more threads in each block?
     $ My Anwser >>>    
     - Error Message: numba.cuda.cudadrv.driver.CudaAPIError: [1] Call to cuLaunchKernel results in CUDA_ERROR_INVALID_VALUE
-    - TPBX = TPBY = 2**7
+    - TPBX = TPBY = 2**6
     
     """
 
