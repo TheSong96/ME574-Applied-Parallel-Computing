@@ -111,6 +111,37 @@ def parallel_logistic_map(r, x, transient, steady):
 
     return d_ss.copy_to_host().transpose()
 
+def f_serial(x, r):
+    '''
+    Execute 1 iteration of the logistic map
+    '''
+    return r * x * (1 - x)
+
+def logisticSteadyArray(x0,r,n_transient, n_ss):
+    '''
+    Conpute an array of iterates of the logistic map f(x)=r*x*(1-x)
+    
+    Inputs:
+        x0: float initial value
+        r: float parameter value
+        n_transient: int number of initial iterates to NOT store
+        n_ss: int number of iterates to store
+        
+    Returns:
+        x: numpy array of n float64 values
+    '''
+    #create an array to hold n elements (each a 64 bit float)
+    x = np.zeros(n_ss, dtype=np.float64) 
+    x_old = x0 #assign the initial value
+    for i in range(n_transient):
+        x_new = f_serial(x_old, r)
+        x_old = x_new
+    for i in range(n_ss): #iterate over the desired sequence
+        x[i] = x_old
+        x_new = f_serial(x_old, r) #compute the output value and assign to variable x_new
+        x_old = x_new #assign the new (output) value top be the old (input) value for the next iterate
+    return x
+
 
 @cuda.jit(device=True)
 def iteration_count(cx, cy, dist, itrs):
@@ -166,7 +197,7 @@ def parallel_mandelbrot(cx, cy, dist, itrs):
     d_y = cuda.to_device(cy)
     d_f = cuda.device_array((nx, ny), dtype=np.float32)
 
-    TPBX = TPBY = 32
+    TPBX = TPBY = 2**4
     gridDims = ((nx + TPBX - 1) // TPBX, (ny + TPBY - 1) // TPBY)
     blockDims = (TPBX, TPBY)
     mandelbrot_kernel[gridDims, blockDims](d_f, d_x, d_y, dist, itrs)
@@ -175,12 +206,19 @@ def parallel_mandelbrot(cx, cy, dist, itrs):
 
 
 if __name__ == "__main__":
+    Prob1 = True
+    Prob2 = True
+    Prob3 = True
+    Prob4 = True
+
+    # Prob1 = Prob2 = Prob3 = False
 
     #Problem 1
-    print("GPU memory in GB: ", gpu_total_memory() / 1024**3)
-    print("Compute capability (Major, Minor): ", gpu_compute_capability())
-    print("GPU Model Name: ", gpu_name())
-    print("Max float64 count: ", max_float64s())
+    if Prob1:
+        print("GPU memory in GB: ", gpu_total_memory() / 1024**3)
+        print("Compute capability (Major, Minor): ", gpu_compute_capability())
+        print("GPU Model Name: ", gpu_name())
+        print("Max float64 count: ", max_float64s())
 
     #PASTE YOUR OUTPUT HERE#
     """
@@ -191,50 +229,125 @@ if __name__ == "__main__":
     """
 
     #Problem 2
-    map_64()
+    if Prob2:
+        map_64()    
 
     #PASTE YOUR ERROR MESSAGES HERE#
     """
-        Max N = 2^29
+        Max N = 2^28
         ERROR MESSAGES: numba.cuda.cudadrv.driver.CudaAPIError: [2] Call to cuMemAlloc results in CUDA_ERROR_OUT_OF_MEMORY
     """
 
     #Problem 3
-    m, rmin, rmax = 128, 2.5, 4.0
-    r = np.linspace(rmin, rmax, m)
-    x, transient, steady = 0.5, 100, 1024
-    ss = parallel_logistic_map(r, x, transient, steady)
+    if Prob3:
+        m, rmin, rmax = 2**12, 2.5, 4.0
+        r = np.linspace(rmin, rmax, m)
+        x0, transient, steady = 0.5, 100, 2**10
 
-    fig = plt.figure(3)
-    plt.plot(r, ss, 'b.')
-    plt.axis([rmin, rmax, 0, 1])
-    plt.xlabel('r value')
-    plt.ylabel('x value')
-    plt.title('Iterations of the logistic map')
-    plt.savefig("logistics map.png")
+        t1 = time()
+        ss = parallel_logistic_map(r, x0, transient, steady)
+        t2 = time()
+        logistic_time = t2 - t1
+        print('It took {} seconds to calculate the parallel_logistic_map graph.'.
+              format(logistic_time))
+        fig = plt.figure(3)
+        plt.plot(r, ss, 'b.')
+        plt.axis([rmin, rmax, 0, 1])
+        plt.xlabel('r value')
+        plt.ylabel('x value')
+        plt.title('Iterations of the logistic map')
+        plt.savefig("logistics map.png")
+
+        x = np.zeros([m, steady])
+        t1 = time()
+        for j in range(r.shape[0]):
+            tmp = logisticSteadyArray(x0, r[j], transient, steady)
+            for i in range(steady):
+                x[j,i] = tmp[i]
+        t2 = time()
+        logistic_time = t2 - t1
+        print('It took {} seconds to calculate the serial_logistic_map graph.'.
+              format(logistic_time))
+    
+    """
+        a) Locate the `for` loops in the logistic map code. What quantity is iterated over in each loop?
+        $ My Anwser >>>
+            - Iterate over `iteration number`: range(transient) and range(steady)
+            - Iterate over range(#r)
+
+        b) For which loop are the computations in each iteration independent of one another? Briefly explain 
+        the reasoning behind your response.
+        $ My Anwser >>>
+            - Each iteration in loop over #r is independent of one another, that why we can parallelize this loop.
+
+        c) Implement a parallel version of the code to compute the bifurcation diagram of the logistic map.
+        $ My Anwser >>>
+            - As above
+
+        d) Modify both the serial and parallel codes to print the time required to perform the computation. 
+        Determine the time requried to compute 1000 iterations for 1000 parameter values, and report the 
+        "acceleration" factor; i.e. the ratio of serial run time over parallel run time.
+        $ My Anwser >>>
+            - When r.size = 10**12, steady = 10**10
+            - Acceleration = 2.6752564907073975/ 0.08854389190673828 = 30x
+    """
 
     #Problem 4
+    if Prob4:
+        width = height = 2**16
+        real_low = imag_low = -2
+        imag_high = real_high = 2
+        real_vals = np.linspace(real_low, real_high, width)
+        imag_vals = np.linspace(imag_low, imag_high, height)
 
-    width = height = 512
-    real_low = imag_low = -2
-    imag_high = real_high = 2
-    real_vals = np.linspace(real_low, real_high, width)
-    imag_vals = np.linspace(imag_low, imag_high, height)
+        t1 = time()
+        mandel = parallel_mandelbrot(real_vals, imag_vals, 2.5, 256)
+        t2 = time()
+        mandel_time = t2 - t1
 
-    t1 = time()
-    mandel = parallel_mandelbrot(real_vals, imag_vals, 2.5, 256)
-    t2 = time()
-    mandel_time = t2 - t1
+        fig = plt.figure(4, figsize=(90,90))
+        plt.imshow(mandel, extent=(-2, 2, -2, 2))
+        plt.colorbar()
+        plt.savefig('parallel_mandelbrot.png')
+        # plt.show()
 
-    fig = plt.figure(4)
-    plt.imshow(mandel, extent=(-2, 2, -2, 2))
-    plt.colorbar()
-    plt.savefig('mandelbrot.png')
-    # plt.show()
+        # boolean_mandel = mandel > 1
+        # plt.imshow(boolean_mandel, extent=(-2, 2, -2, 2))
+        # plt.savefig('boolean_mandel.png')
+        # plt.show()
 
-    # boolean_mandel = mandel > 1
-    # plt.imshow(boolean_mandel, extent=(-2, 2, -2, 2))
-    # plt.savefig('boolean_mandel.png')
-    # plt.show()
+        print('It took {} seconds to calculate the parallel_mandelbrot graph.'.format(
+            mandel_time))
 
-    print('It took {} seconds to calculate the Mandelbrot graph.'.format(mandel_time))
+    """
+    a) What do the `for` loops in the serial code iterate over? For which loops are 
+    the computations for each iteration independent of one another? Briefly explain 
+    the reasoning behind your reply.
+    $ My Anwser >>>
+    - Iterate over nx and ny
+    - both of them are independent cases, that's why both of them can be parallelized.
+
+    b) Write a numba implementation that a lunches a 2D computational grid to parallelize 
+    the appropriate loops. Run your parallel code and verify that it reproduces the 
+    results of the serial version. 
+    $ My Anwser >>>
+    - As above
+    
+    Also run your code to answer the questions below:
+    
+    c) What is the finest resolution 2D grid can you run on your GPU? What error message 
+    is generated by attempting finer grid resolution?
+    $ My Anwser >>>    
+    - Error Message: numba.cuda.cudadrv.driver.CudaAPIError: [2] Call to cuMemAlloc results in CUDA_ERROR_OUT_OF_MEMORY
+    - width = height = 2**15
+
+    d) What is the largest square block that you can run on your GPU? What error message 
+    is generated if you request more threads in each block?
+    $ My Anwser >>>    
+    - Error Message: numba.cuda.cudadrv.driver.CudaAPIError: [1] Call to cuLaunchKernel results in CUDA_ERROR_INVALID_VALUE
+    - TPBX = TPBY = 2**7
+    
+    """
+
+
+
