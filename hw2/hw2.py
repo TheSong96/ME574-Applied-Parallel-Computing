@@ -62,7 +62,6 @@ def f(x, r):
     '''
     return r * x * (1 - x)
 
-
 @cuda.jit
 def logistic_map_kernel(ss, r, x, transient, steady):
     '''
