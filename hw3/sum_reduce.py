@@ -25,25 +25,25 @@ from numba import cuda, float32, float64
 
 TPB =  16
 
-# # first try - where to definite/initialize accum?
-# @cuda.jit
-# def sum_kernel(d_u):
-# 	n = d_u.shape[0]
-# 	i = cuda.grid(1)
-# 	accum = 0
-# 	accum += d_u[i]
-# 	print("Thread result is ", accum)
+# first try - where to definite/initialize accum?
+@cuda.jit
+def sum_kernel(d_u):
+	n = d_u.shape[0]
+	i = cuda.grid(1)
+	accum = 0
+	accum += d_u[i]
+	print("Thread result is ", accum)
 
-# def nu_sum(u):
-# 	n = u.shape[0]
-# 	d_u = cuda.to_device(u)
-# 	blocks = (n+TPB-1)//TPB
-# 	threads = TPB
-# 	#accum = 0
-# 	sum_kernel[blocks, threads](d_u)
+def nu_sum(u):
+	n = u.shape[0]
+	d_u = cuda.to_device(u)
+	blocks = (n+TPB-1)//TPB
+	threads = TPB
+	#accum = 0
+	sum_kernel[blocks, threads](d_u)
 	
-# nu_sum(u)
-# #print("first parallel try gives ", accum)
+accum = nu_sum(u)
+print("first parallel try gives ", accum)
 
 # second try
 # @cuda.jit
